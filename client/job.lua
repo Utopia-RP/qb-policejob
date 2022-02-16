@@ -668,7 +668,7 @@ CreateThread(function()
                 if #(pos - vector3(v.x, v.y, v.z)) < 7.5 then
                     if onDuty then
                         sleep = 5
-                        DrawMarker(2, v.x, v.y, v.z, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.3, 0.2, 0.15, 200, 0, 0, 222, false, false, false, true, false, false, false)
+                        DrawMarker(34, v.x, v.y, v.z, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.15, 200, 0, 0, 222, false, false, false, true, false, false, false)
                         if #(pos - vector3(v.x, v.y, v.z)) < 1.5 then
                             if IsPedInAnyVehicle(PlayerPedId(), false) then
                                 DrawText3D(v.x, v.y, v.z, Lang:t('info.store_heli'))
@@ -715,7 +715,7 @@ CreateThread(function()
                 if #(pos - vector3(v.x, v.y, v.z)) < 7.5 then
                     if onDuty then
                         sleep = 5
-                        DrawMarker(2, v.x, v.y, v.z, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.3, 0.2, 0.15, 200, 0, 0, 222, false, false, false, true, false, false, false)
+                        DrawMarker(1, v.x, v.y, v.z - 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 3.0, 3.0, 3.0, 1.0, 255, 255, 0, 255, false, false, false, true, false, false, false)
                         if #(pos - vector3(v.x, v.y, v.z)) <= 1.5 then
                             if IsPedInAnyVehicle(PlayerPedId(), false) then
                                 DrawText3D(v.x, v.y, v.z, Lang:t('info.impound_veh'))
@@ -766,7 +766,7 @@ CreateThread(function()
                 if #(pos - vector3(v.x, v.y, v.z)) < 7.5 then
                     if onDuty then
                         sleep = 5
-                        DrawMarker(2, v.x, v.y, v.z, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.3, 0.2, 0.15, 200, 0, 0, 222, false, false, false, true, false, false, false)
+                        DrawMarker(1, v.x, v.y, v.z - 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 3.0, 3.0, 3.0, 1.0, 11, 55, 123, 255, false, false, false, true, false, false, false)
                         if #(pos - vector3(v.x, v.y, v.z)) < 1.5 then
                             if IsPedInAnyVehicle(PlayerPedId(), false) then
                                 DrawText3D(v.x, v.y, v.z, Lang:t('info.store_veh'))
