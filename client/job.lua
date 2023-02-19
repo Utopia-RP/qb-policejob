@@ -2,27 +2,17 @@
 local currentGarage = 0
 local inFingerprint = false
 local FingerPrintSessionId = nil
-
--- Functions
-local function DrawText3D(x, y, z, text)
-    SetTextScale(0.35, 0.35)
-    SetTextFont(4)
-    SetTextProportional(1)
-    SetTextColour(255, 255, 255, 215)
-    SetTextEntry("STRING")
-    SetTextCentre(true)
-    AddTextComponentString(text)
-    SetDrawOrigin(x,y,z, 0)
-    DrawText(0.0, 0.0)
-    local factor = (string.len(text)) / 370
-    DrawRect(0.0, 0.0+0.0125, 0.017+ factor, 0.03, 0, 0, 0, 75)
-    ClearDrawOrigin()
-end
+local inStash = false
+local inTrash = false
+local inArmoury = false
+local inHelicopter = false
+local inImpound = false
+local inGarage = false
 
 local function loadAnimDict(dict) -- interactions, job,
     while (not HasAnimDictLoaded(dict)) do
         RequestAnimDict(dict)
-        Citizen.Wait(10)
+        Wait(10)
     end
 end
 
@@ -57,7 +47,7 @@ end
 
 local function SetCarItemsInfo()
 	local items = {}
-	for k, item in pairs(Config.CarItems) do
+	for _, item in pairs(Config.CarItems) do
 		local itemInfo = QBCore.Shared.Items[item.name:lower()]
 		items[item.slot] = {
 			name = itemInfo["name"],
@@ -90,7 +80,7 @@ local function doCarDamage(currentVehicle, veh)
 	if body < 920.0 then damageOutside = true end
 	if body < 920.0 then damageOutside2 = true end
 
-    Citizen.Wait(100)
+    Wait(100)
     SetVehicleEngineHealth(currentVehicle, engine)
 
 	if smash then
@@ -122,40 +112,48 @@ end
 function TakeOutImpound(vehicle)
     local coords = Config.Locations["impound"][currentGarage]
     if coords then
-        QBCore.Functions.SpawnVehicle(vehicle.vehicle, function(veh)
+        QBCore.Functions.TriggerCallback('QBCore:Server:SpawnVehicle', function(netId)
+            local veh = NetToVeh(netId)
             QBCore.Functions.TriggerCallback('qb-garage:server:GetVehicleProperties', function(properties)
                 QBCore.Functions.SetVehicleProperties(veh, properties)
                 SetVehicleNumberPlateText(veh, vehicle.plate)
+		SetVehicleDirtLevel(veh, 0.0)
                 SetEntityHeading(veh, coords.w)
                 exports['LegacyFuel']:SetFuel(veh, vehicle.fuel)
                 doCarDamage(veh, vehicle)
-                TriggerServerEvent('police:server:TakeOutImpound',vehicle.plate)
+                TriggerServerEvent('police:server:TakeOutImpound', vehicle.plate, currentGarage)
                 closeMenuFull()
                 TaskWarpPedIntoVehicle(PlayerPedId(), veh, -1)
                 TriggerEvent("vehiclekeys:client:SetOwner", QBCore.Functions.GetPlate(veh))
                 SetVehicleEngineOn(veh, true, true)
             end, vehicle.plate)
-        end, coords, true)
+        end, vehicle.vehicle, coords, true)
     end
 end
 
 function TakeOutVehicle(vehicleInfo)
     local coords = Config.Locations["vehicle"][currentGarage]
     if coords then
-        QBCore.Functions.SpawnVehicle(vehicleInfo, function(veh)
+        QBCore.Functions.TriggerCallback('QBCore:Server:SpawnVehicle', function(netId)
+            local veh = NetToVeh(netId)
             SetCarItemsInfo()
             SetVehicleNumberPlateText(veh, Lang:t('info.police_plate')..tostring(math.random(1000, 9999)))
             SetEntityHeading(veh, coords.w)
             exports['LegacyFuel']:SetFuel(veh, 100.0)
             closeMenuFull()
             if Config.VehicleSettings[vehicleInfo] ~= nil then
-                QBCore.Shared.SetDefaultVehicleExtras(veh, Config.VehicleSettings[vehicleInfo].extras)
+                if Config.VehicleSettings[vehicleInfo].extras ~= nil then
+			QBCore.Shared.SetDefaultVehicleExtras(veh, Config.VehicleSettings[vehicleInfo].extras)
+		end
+		if Config.VehicleSettings[vehicleInfo].livery ~= nil then
+			SetVehicleLivery(veh, Config.VehicleSettings[vehicleInfo].livery)
+		end
             end
             TaskWarpPedIntoVehicle(PlayerPedId(), veh, -1)
             TriggerEvent("vehiclekeys:client:SetOwner", QBCore.Functions.GetPlate(veh))
             TriggerServerEvent("inventory:server:addTrunkItems", QBCore.Functions.GetPlate(veh), Config.CarItems)
             SetVehicleEngineOn(veh, true, true)
-        end, coords, true)
+        end, vehicleInfo, coords, true)
     end
 end
 
@@ -169,7 +167,7 @@ local function IsArmoryWhitelist() -- being removed
 end
 
 local function SetWeaponSeries()
-    for k, v in pairs(Config.Items.items) do
+    for k, _ in pairs(Config.Items.items) do
         if k < 6 then
             Config.Items.items[k].info.serie = tostring(QBCore.Shared.RandomInt(2) .. QBCore.Shared.RandomStr(3) .. QBCore.Shared.RandomInt(1) .. QBCore.Shared.RandomStr(2) .. QBCore.Shared.RandomInt(3) .. QBCore.Shared.RandomStr(4))
         end
@@ -241,7 +239,6 @@ function MenuImpound(currentSelection)
             shouldContinue = true
             for _ , v in pairs(result) do
                 local enginePercent = QBCore.Shared.Round(v.engine / 10, 0)
-                local bodyPercent = QBCore.Shared.Round(v.body / 10, 0)
                 local currentFuel = v.fuel
                 local vname = QBCore.Shared.Vehicles[v.vehicle].name
 
@@ -279,9 +276,10 @@ function closeMenuFull()
 end
 
 --NUI Callbacks
-RegisterNUICallback('closeFingerprint', function()
+RegisterNUICallback('closeFingerprint', function(_, cb)
     SetNuiFocus(false, false)
     inFingerprint = false
+    cb('ok')
 end)
 
 --Events
@@ -298,8 +296,9 @@ RegisterNetEvent('police:client:showFingerprintId', function(fid)
     PlaySound(-1, "Event_Start_Text", "GTAO_FM_Events_Soundset", 0, 0, 1)
 end)
 
-RegisterNUICallback('doFingerScan', function(data)
+RegisterNUICallback('doFingerScan', function(_, cb)
     TriggerServerEvent('police:server:showFingerprintId', FingerPrintSessionId)
+    cb("ok")
 end)
 
 RegisterNetEvent('police:client:SendEmergencyMessage', function(coords, message)
@@ -316,10 +315,10 @@ RegisterNetEvent('police:client:CallAnim', function()
     local callCount = 5
     loadAnimDict("cellphone@")
     TaskPlayAnim(PlayerPedId(), 'cellphone@', 'cellphone_call_listen_base', 3.0, -1, -1, 49, 0, false, false, false)
-    Citizen.Wait(1000)
-    Citizen.CreateThread(function()
+    Wait(1000)
+    CreateThread(function()
         while isCalling do
-            Citizen.Wait(1000)
+            Wait(1000)
             callCount = callCount - 1
             if callCount <= 0 then
                 isCalling = false
@@ -339,9 +338,39 @@ RegisterNetEvent('police:client:ImpoundVehicle', function(fullImpound, price)
         local pos = GetEntityCoords(ped)
         local vehpos = GetEntityCoords(vehicle)
         if #(pos - vehpos) < 5.0 and not IsPedInAnyVehicle(ped) then
-            local plate = QBCore.Functions.GetPlate(vehicle)
-            TriggerServerEvent("police:server:Impound", plate, fullImpound, price, bodyDamage, engineDamage, totalFuel)
-            QBCore.Functions.DeleteVehicle(vehicle)
+           QBCore.Functions.Progressbar('impound', Lang:t('progressbar.impound'), 5000, false, true, {
+                disableMovement = true,
+                disableCarMovement = true,
+                disableMouse = false,
+                disableCombat = true,
+            }, {
+                animDict = 'missheistdockssetup1clipboard@base',
+                anim = 'base',
+                flags = 1,
+            }, {
+                model = 'prop_notepad_01',
+                bone = 18905,
+                coords = { x = 0.1, y = 0.02, z = 0.05 },
+                rotation = { x = 10.0, y = 0.0, z = 0.0 },
+            },{
+                model = 'prop_pencil_01',
+                bone = 58866,
+                coords = { x = 0.11, y = -0.02, z = 0.001 },
+                rotation = { x = -120.0, y = 0.0, z = 0.0 },
+            }, function() -- Play When Done
+                local plate = QBCore.Functions.GetPlate(vehicle)
+                TriggerServerEvent("police:server:Impound", plate, fullImpound, price, bodyDamage, engineDamage, totalFuel)
+                while NetworkGetEntityOwner(vehicle) ~= 128 do  -- Ensure we have entity ownership to prevent inconsistent vehicle deletion
+                    NetworkRequestControlOfEntity(vehicle)
+                    Wait(100)
+                end
+                QBCore.Functions.DeleteVehicle(vehicle)
+                TriggerEvent('QBCore:Notify', Lang:t('success.impounded'), 'success')
+                ClearPedTasks(ped)
+            end, function() -- Play When Cancel
+                ClearPedTasks(ped)
+                TriggerEvent('QBCore:Notify', Lang:t('error.canceled'), 'error')
+            end)
         end
     end
 end)
@@ -354,7 +383,7 @@ RegisterNetEvent('police:client:CheckStatus', function()
                 local playerId = GetPlayerServerId(player)
                 QBCore.Functions.TriggerCallback('police:GetPlayerStatus', function(result)
                     if result then
-                        for k, v in pairs(result) do
+                        for _, v in pairs(result) do
                             QBCore.Functions.Notify(''..v..'')
                         end
                     end
@@ -367,42 +396,25 @@ RegisterNetEvent('police:client:CheckStatus', function()
 end)
 
 RegisterNetEvent("police:client:VehicleMenuHeader", function (data)
-    local ped = PlayerPedId()
-    local pos = GetEntityCoords(ped)
-    local takeDist = Config.Locations['vehicle'][data.currentSelection]
-    takeDist = vector3(takeDist.x, takeDist.y,  takeDist.z)
-    if #(pos - takeDist) <= 1.5 then
-        MenuGarage(data.currentSelection)
-        currentGarage = data.currentSelection
-    end
+    MenuGarage(data.currentSelection)
+    currentGarage = data.currentSelection
 end)
 
 
 RegisterNetEvent("police:client:ImpoundMenuHeader", function (data)
-    local pos = GetEntityCoords(PlayerPedId())
-    local takeDist = Config.Locations['impound'][data.currentSelection]
-    takeDist = vector3(takeDist.x, takeDist.y,  takeDist.z)
-    if #(pos - takeDist) <= 1.5 then
-        MenuImpound(data.currentSelection)
-        currentGarage = data.currentSelection
-    end
+    MenuImpound(data.currentSelection)
+    currentGarage = data.currentSelection
 end)
 
 RegisterNetEvent('police:client:TakeOutImpound', function(data)
-    local pos = GetEntityCoords(PlayerPedId())
-    local takeDist = Config.Locations['impound'][data.currentSelection]
-    takeDist = vector3(takeDist.x, takeDist.y,  takeDist.z)
-    if #(pos - takeDist) <= 1.5 then
+    if inImpound then
         local vehicle = data.vehicle
         TakeOutImpound(vehicle)
     end
 end)
 
 RegisterNetEvent('police:client:TakeOutVehicle', function(data)
-    local pos = GetEntityCoords(PlayerPedId())
-    local takeDist = Config.Locations['vehicle'][data.currentSelection]
-    takeDist = vector3(takeDist.x, takeDist.y,  takeDist.z)
-    if #(pos - takeDist) <= 1.5 then
+    if inGarage then
         local vehicle = data.vehicle
         TakeOutVehicle(vehicle)
     end
@@ -441,218 +453,655 @@ RegisterNetEvent('police:client:EvidenceStashDrawer', function(data)
     end
 end)
 
--- Threads
-
--- Toggle Duty in an event.
 RegisterNetEvent('qb-policejob:ToggleDuty', function()
-    onDuty = not onDuty
+    TriggerServerEvent("QBCore:ToggleDuty")
     TriggerServerEvent("police:server:UpdateCurrentCops")
     TriggerServerEvent("police:server:UpdateBlips")
-    TriggerServerEvent("QBCore:ToggleDuty")
 end)
 
--- Toggle Duty
-CreateThread(function()
-    while true do
-        local sleep = 2000
-        if LocalPlayer.state.isLoggedIn and PlayerJob.name == "police" then
-            local pos = GetEntityCoords(PlayerPedId())
-
-            for k, v in pairs(Config.Locations["duty"]) do
-                if #(pos - v) < 5 then
-                    sleep = 5
-                    if #(pos - v) < 1.5 then
-                        if not onDuty then
-                            DrawText3D(v.x, v.y, v.z, Lang:t('info.on_duty'))
-                        else
-                            DrawText3D(v.x, v.y, v.z, Lang:t('info.off_duty'))
-                        end
-                        if IsControlJustReleased(0, 38) then
-                            onDuty = not onDuty
-                            TriggerServerEvent("police:server:UpdateCurrentCops")
-                            TriggerServerEvent("QBCore:ToggleDuty")
-                            TriggerServerEvent("police:server:UpdateBlips")
-                        end
-                    elseif #(pos - v) < 2.5 then
-                        DrawText3D(v.x, v.y, v.z, Lang:t('info.onoff_duty'))
-                    end
-                end
-            end
-        end
-        Wait(sleep)
+RegisterNetEvent('qb-police:client:scanFingerPrint', function()
+    local player, distance = GetClosestPlayer()
+    if player ~= -1 and distance < 2.5 then
+        local playerId = GetPlayerServerId(player)
+        TriggerServerEvent("police:server:showFingerprint", playerId)
+    else
+        QBCore.Functions.Notify(Lang:t("error.none_nearby"), "error")
     end
 end)
 
--- Stash 1
-CreateThread(function()
-    Wait(1000)
-    local headerDrawn = false
+RegisterNetEvent('qb-police:client:openArmoury', function()
+    local authorizedItems = {
+        label = Lang:t('menu.pol_armory'),
+        slots = 30,
+        items = {}
+    }
+    local index = 1
+    for _, armoryItem in pairs(Config.Items.items) do
+        for i=1, #armoryItem.authorizedJobGrades do
+            if armoryItem.authorizedJobGrades[i] == PlayerJob.grade.level then
+                authorizedItems.items[index] = armoryItem
+                authorizedItems.items[index].slot = index
+                index = index + 1
+            end
+        end
+    end
+    SetWeaponSeries()
+    TriggerServerEvent("inventory:server:OpenInventory", "shop", "police", authorizedItems)
+end)
 
-    while true do
-        local sleep = 2000
-        if LocalPlayer.state.isLoggedIn and PlayerJob.name == "police" then
-            local pos = GetEntityCoords(PlayerPedId())
-            for k, v in pairs(Config.Locations["evidence"]) do
-                if #(pos - v) < 2 then
-                    sleep = 5
-                    if #(pos - v) < 1.0 then
-                        if not headerDrawn then
-                            headerDrawn = true
-                            exports['qb-menu']:showHeader({
-                                {
-                                    header = Lang:t('info.evidence_stash', {value = k}),
-                                    params = {
-                                        event = 'police:client:EvidenceStashDrawer',
-                                        args = {
-                                            currentEvidence = k
-                                        }
-                                    }
+RegisterNetEvent('qb-police:client:spawnHelicopter', function(k)
+    if IsPedInAnyVehicle(PlayerPedId(), false) then
+        QBCore.Functions.DeleteVehicle(GetVehiclePedIsIn(PlayerPedId()))
+    else
+        local coords = Config.Locations["helicopter"][k]
+        if not coords then coords = GetEntityCoords(PlayerPedId()) end
+        QBCore.Functions.TriggerCallback('QBCore:Server:SpawnVehicle', function(netId)
+            local veh = NetToVeh(netId)
+            SetVehicleLivery(veh , 0)
+            SetVehicleMod(veh, 0, 48)
+            SetVehicleNumberPlateText(veh, "ZULU"..tostring(math.random(1000, 9999)))
+            SetEntityHeading(veh, coords.w)
+            exports['LegacyFuel']:SetFuel(veh, 100.0)
+            closeMenuFull()
+            TaskWarpPedIntoVehicle(PlayerPedId(), veh, -1)
+            TriggerEvent("vehiclekeys:client:SetOwner", QBCore.Functions.GetPlate(veh))
+            SetVehicleEngineOn(veh, true, true)
+        end, Config.PoliceHelicopter, coords, true)
+    end
+end)
+
+RegisterNetEvent("qb-police:client:openStash", function()
+    TriggerServerEvent("inventory:server:OpenInventory", "stash", "policestash_"..QBCore.Functions.GetPlayerData().citizenid)
+    TriggerEvent("inventory:client:SetCurrentStash", "policestash_"..QBCore.Functions.GetPlayerData().citizenid)
+end)
+
+RegisterNetEvent('qb-police:client:openTrash', function()
+    TriggerServerEvent("inventory:server:OpenInventory", "stash", "policetrash", {
+        maxweight = 4000000,
+        slots = 300,
+    })
+    TriggerEvent("inventory:client:SetCurrentStash", "policetrash")
+end)
+
+--##### Threads #####--
+
+local dutylisten = false
+local function dutylistener()
+    dutylisten = true
+    CreateThread(function()
+        while dutylisten do
+            if PlayerJob.name == "police" then
+                if IsControlJustReleased(0, 38) then
+                    TriggerServerEvent("QBCore:ToggleDuty")
+                    TriggerServerEvent("police:server:UpdateCurrentCops")
+                    TriggerServerEvent("police:server:UpdateBlips")
+                    dutylisten = false
+                    break
+                end
+            else
+                break
+            end
+            Wait(0)
+        end
+    end)
+end
+
+-- Personal Stash Thread
+local function stash()
+    CreateThread(function()
+        while true do
+            Wait(0)
+            if inStash and PlayerJob.name == "police" then
+                if PlayerJob.onduty then sleep = 5 end
+                if IsControlJustReleased(0, 38) then
+                    TriggerServerEvent("inventory:server:OpenInventory", "stash", "policestash_"..QBCore.Functions.GetPlayerData().citizenid)
+                    TriggerEvent("inventory:client:SetCurrentStash", "policestash_"..QBCore.Functions.GetPlayerData().citizenid)
+                    break
+                end
+            else
+                break
+            end
+        end
+    end)
+end
+
+-- Police Trash Thread
+local function trash()
+    CreateThread(function()
+        while true do
+            Wait(0)
+            if inTrash and PlayerJob.name == "police" then
+                if PlayerJob.onduty then sleep = 5 end
+                if IsControlJustReleased(0, 38) then
+                    TriggerServerEvent("inventory:server:OpenInventory", "stash", "policetrash", {
+                        maxweight = 4000000,
+                        slots = 300,
+                    })
+                    TriggerEvent("inventory:client:SetCurrentStash", "policetrash")
+                    break
+                end
+            else
+                break
+            end
+        end
+    end)
+end
+
+-- Fingerprint Thread
+local function fingerprint()
+    CreateThread(function()
+        while true do
+            Wait(0)
+            if inFingerprint and PlayerJob.name == "police" then
+                if PlayerJob.onduty then sleep = 5 end
+                if IsControlJustReleased(0, 38) then
+                    TriggerEvent("qb-police:client:scanFingerPrint")
+                    break
+                end
+            else
+                break
+            end
+        end
+    end)
+end
+
+-- Armoury Thread
+local function armoury()
+    CreateThread(function()
+        while true do
+            Wait(0)
+            if inArmoury and PlayerJob.name == "police" then
+                if PlayerJob.onduty then sleep = 5 end
+                if IsControlJustReleased(0, 38) then
+                    TriggerEvent("qb-police:client:openArmoury")
+                    break
+                end
+            else
+                break
+            end
+        end
+    end)
+end
+
+-- Helicopter Thread
+local function heli()
+    CreateThread(function()
+        while true do
+            Wait(0)
+            if inHelicopter and PlayerJob.name == "police" then
+                if PlayerJob.onduty then sleep = 5 end
+                if IsControlJustReleased(0, 38) then
+                    TriggerEvent("qb-police:client:spawnHelicopter")
+                    break
+                end
+            else
+                break
+            end
+        end
+    end)
+end
+
+-- Police Impound Thread
+local function impound()
+    CreateThread(function()
+        while true do
+            Wait(0)
+            if inImpound and PlayerJob.name == "police" then
+                if PlayerJob.onduty then sleep = 5 end
+                if IsPedInAnyVehicle(PlayerPedId(), false) then
+                    if IsControlJustReleased(0, 38) then
+                        QBCore.Functions.DeleteVehicle(GetVehiclePedIsIn(PlayerPedId()))
+                        break
+                    end
+                end
+            else
+                break
+            end
+        end
+    end)
+end
+
+-- Police Garage Thread
+local function garage()
+    CreateThread(function()
+        while true do
+            Wait(0)
+            if inGarage and PlayerJob.name == "police" then
+                if PlayerJob.onduty then sleep = 5 end
+                if IsPedInAnyVehicle(PlayerPedId(), false) then
+                    if IsControlJustReleased(0, 38) then
+                        QBCore.Functions.DeleteVehicle(GetVehiclePedIsIn(PlayerPedId()))
+                        break
+                    end
+                end
+            else
+                break
+            end
+        end
+    end)
+end
+
+if Config.UseTarget then
+    CreateThread(function()
+        -- Toggle Duty
+        for k, v in pairs(Config.Locations["duty"]) do
+            exports['qb-target']:AddBoxZone("PoliceDuty_"..k, vector3(v.x, v.y, v.z), 1, 1, {
+                name = "PoliceDuty_"..k,
+                heading = 11,
+                debugPoly = false,
+                minZ = v.z - 1,
+                maxZ = v.z + 1,
+            }, {
+                options = {
+                    {
+                        type = "client",
+                        event = "qb-policejob:ToggleDuty",
+                        icon = "fas fa-sign-in-alt",
+                        label = "Sign In",
+                        job = "police",
+                    },
+                },
+                distance = 1.5
+            })
+        end
+
+        -- Personal Stash
+        for k, v in pairs(Config.Locations["stash"]) do
+            exports['qb-target']:AddBoxZone("PoliceStash_"..k, vector3(v.x, v.y, v.z), 1.5, 1.5, {
+                name = "PoliceStash_"..k,
+                heading = 11,
+                debugPoly = false,
+                minZ = v.z - 1,
+                maxZ = v.z + 1,
+            }, {
+                options = {
+                    {
+                        type = "client",
+                        event = "qb-police:client:openStash",
+                        icon = "fas fa-dungeon",
+                        label = "Open Personal Stash",
+                        job = "police",
+                    },
+                },
+                distance = 1.5
+            })
+        end
+
+        -- Police Trash
+        for k, v in pairs(Config.Locations["trash"]) do
+            exports['qb-target']:AddBoxZone("PoliceTrash_"..k, vector3(v.x, v.y, v.z), 1, 1.75, {
+                name = "PoliceTrash_"..k,
+                heading = 11,
+                debugPoly = false,
+                minZ = v.z - 1,
+                maxZ = v.z + 1,
+            }, {
+                options = {
+                    {
+                        type = "client",
+                        event = "qb-police:client:openTrash",
+                        icon = "fas fa-trash",
+                        label = "Open Trash",
+                        job = "police",
+                    },
+                },
+                distance = 1.5
+            })
+        end
+
+        -- Fingerprint
+        for k, v in pairs(Config.Locations["fingerprint"]) do
+            exports['qb-target']:AddBoxZone("PoliceFingerprint_"..k, vector3(v.x, v.y, v.z), 2, 1, {
+                name = "PoliceFingerprint_"..k,
+                heading = 11,
+                debugPoly = false,
+                minZ = v.z - 1,
+                maxZ = v.z + 1,
+            }, {
+                options = {
+                    {
+                        type = "client",
+                        event = "qb-police:client:scanFingerPrint",
+                        icon = "fas fa-fingerprint",
+                        label = "Open Fingerprint",
+                        job = "police",
+                    },
+                },
+                distance = 1.5
+            })
+        end
+
+        -- Armoury
+        for k, v in pairs(Config.Locations["armory"]) do
+            exports['qb-target']:AddBoxZone("PoliceArmory_"..k, vector3(v.x, v.y, v.z), 5, 1, {
+                name = "PoliceArmory_"..k,
+                heading = 11,
+                debugPoly = false,
+                minZ = v.z - 1,
+                maxZ = v.z + 1,
+            }, {
+                options = {
+                    {
+                        type = "client",
+                        event = "qb-police:client:openArmoury",
+                        icon = "fas fa-swords",
+                        label = "Open Armory",
+                        job = "police",
+                    },
+                },
+                distance = 1.5
+            })
+        end
+
+    end)
+
+else
+
+    -- Toggle Duty
+    local dutyZones = {}
+    for _, v in pairs(Config.Locations["duty"]) do
+        dutyZones[#dutyZones+1] = BoxZone:Create(
+            vector3(vector3(v.x, v.y, v.z)), 1.75, 1, {
+            name="box_zone",
+            debugPoly = false,
+            minZ = v.z - 1,
+            maxZ = v.z + 1,
+        })
+    end
+
+    local dutyCombo = ComboZone:Create(dutyZones, {name = "dutyCombo", debugPoly = false})
+    dutyCombo:onPlayerInOut(function(isPointInside)
+        if isPointInside then
+            dutylisten = true
+            if not PlayerJob.onduty then
+                exports['qb-core']:DrawText(Lang:t('info.on_duty'),'left')
+                dutylistener()
+            else
+                exports['qb-core']:DrawText(Lang:t('info.off_duty'),'left')
+                dutylistener()
+            end
+        else
+            dutylisten = false
+            exports['qb-core']:HideText()
+        end
+    end)
+
+    -- Personal Stash
+    local stashZones = {}
+    for _, v in pairs(Config.Locations["stash"]) do
+        stashZones[#stashZones+1] = BoxZone:Create(
+            vector3(vector3(v.x, v.y, v.z)), 1.5, 1.5, {
+            name="box_zone",
+            debugPoly = false,
+            minZ = v.z - 1,
+            maxZ = v.z + 1,
+        })
+    end
+
+    local stashCombo = ComboZone:Create(stashZones, {name = "stashCombo", debugPoly = false})
+    stashCombo:onPlayerInOut(function(isPointInside, _, _)
+        if isPointInside then
+            inStash = true
+            if PlayerJob.name == 'police' and PlayerJob.onduty then
+                exports['qb-core']:DrawText(Lang:t('info.stash_enter'), 'left')
+                stash()
+            end
+        else
+            inStash = false
+            exports['qb-core']:HideText()
+        end
+    end)
+
+    -- Police Trash
+    local trashZones = {}
+    for _, v in pairs(Config.Locations["trash"]) do
+        trashZones[#trashZones+1] = BoxZone:Create(
+            vector3(vector3(v.x, v.y, v.z)), 1, 1.75, {
+            name="box_zone",
+            debugPoly = false,
+            minZ = v.z - 1,
+            maxZ = v.z + 1,
+        })
+    end
+
+    local trashCombo = ComboZone:Create(trashZones, {name = "trashCombo", debugPoly = false})
+    trashCombo:onPlayerInOut(function(isPointInside)
+        if isPointInside then
+            inTrash = true
+            if PlayerJob.name == 'police' and PlayerJob.onduty then
+                exports['qb-core']:DrawText(Lang:t('info.trash_enter'),'left')
+                trash()
+            end
+        else
+            inTrash = false
+            exports['qb-core']:HideText()
+        end
+    end)
+
+    -- Fingerprints
+    local fingerprintZones = {}
+    for _, v in pairs(Config.Locations["fingerprint"]) do
+        fingerprintZones[#fingerprintZones+1] = BoxZone:Create(
+            vector3(vector3(v.x, v.y, v.z)), 2, 1, {
+            name="box_zone",
+            debugPoly = false,
+            minZ = v.z - 1,
+            maxZ = v.z + 1,
+        })
+    end
+
+    local fingerprintCombo = ComboZone:Create(fingerprintZones, {name = "fingerprintCombo", debugPoly = false})
+    fingerprintCombo:onPlayerInOut(function(isPointInside)
+        if isPointInside then
+            inFingerprint = true
+            if PlayerJob.name == 'police' and PlayerJob.onduty then
+                exports['qb-core']:DrawText(Lang:t('info.scan_fingerprint'),'left')
+                fingerprint()
+            end
+        else
+            inFingerprint = false
+            exports['qb-core']:HideText()
+        end
+    end)
+
+    -- Armoury
+    local armouryZones = {}
+    for _, v in pairs(Config.Locations["armory"]) do
+        armouryZones[#armouryZones+1] = BoxZone:Create(
+            vector3(vector3(v.x, v.y, v.z)), 5, 1, {
+            name="box_zone",
+            debugPoly = false,
+            minZ = v.z - 1,
+            maxZ = v.z + 1,
+        })
+    end
+
+    local armouryCombo = ComboZone:Create(armouryZones, {name = "armouryCombo", debugPoly = false})
+    armouryCombo:onPlayerInOut(function(isPointInside)
+        if isPointInside then
+            inArmoury = true
+            if PlayerJob.name == 'police' and PlayerJob.onduty then
+                exports['qb-core']:DrawText(Lang:t('info.enter_armory'),'left')
+                armoury()
+            end
+        else
+            inArmoury = false
+            exports['qb-core']:HideText()
+        end
+    end)
+
+end
+
+CreateThread(function()
+    -- Evidence Storage
+    local evidenceZones = {}
+    for _, v in pairs(Config.Locations["evidence"]) do
+        evidenceZones[#evidenceZones+1] = BoxZone:Create(
+            vector3(vector3(v.x, v.y, v.z)), 2, 1, {
+            name="box_zone",
+            debugPoly = false,
+            minZ = v.z - 1,
+            maxZ = v.z + 1,
+        })
+    end
+
+    local evidenceCombo = ComboZone:Create(evidenceZones, {name = "evidenceCombo", debugPoly = false})
+    evidenceCombo:onPlayerInOut(function(isPointInside)
+        if isPointInside then
+            if PlayerJob.name == "police" and PlayerJob.onduty then
+                local currentEvidence = 0
+                local pos = GetEntityCoords(PlayerPedId())
+
+                for k, v in pairs(Config.Locations["evidence"]) do
+                    if #(pos - v) < 2 then
+                        currentEvidence = k
+                    end
+                end
+                exports['qb-menu']:showHeader({
+                    {
+                        header = Lang:t('info.evidence_stash', {value = currentEvidence}),
+                        params = {
+                            event = 'police:client:EvidenceStashDrawer',
+                            args = {
+                                currentEvidence = currentEvidence
+                            }
+                        }
+                    }
+                })
+            end
+        else
+            exports['qb-menu']:closeMenu()
+        end
+    end)
+
+    -- Helicopter
+    local helicopterZones = {}
+    for _, v in pairs(Config.Locations["helicopter"]) do
+        helicopterZones[#helicopterZones+1] = BoxZone:Create(
+            vector3(vector3(v.x, v.y, v.z)), 10, 10, {
+            name="box_zone",
+            debugPoly = false,
+            minZ = v.z - 1,
+            maxZ = v.z + 1,
+        })
+    end
+
+    local helicopterCombo = ComboZone:Create(helicopterZones, {name = "helicopterCombo", debugPoly = false})
+    helicopterCombo:onPlayerInOut(function(isPointInside)
+        if isPointInside then
+            inHelicopter = true
+            if PlayerJob.name == 'police' and PlayerJob.onduty then
+                if IsPedInAnyVehicle(PlayerPedId(), false) then
+                    exports['qb-core']:HideText()
+                    exports['qb-core']:DrawText(Lang:t('info.store_heli'), 'left')
+                    heli()
+                else
+                    exports['qb-core']:DrawText(Lang:t('info.take_heli'), 'left')
+                    heli()
+                end
+            end
+        else
+            inHelicopter = false
+            exports['qb-core']:HideText()
+        end
+    end)
+
+    -- Police Impound
+    local impoundZones = {}
+    for _, v in pairs(Config.Locations["impound"]) do
+        impoundZones[#impoundZones+1] = BoxZone:Create(
+            vector3(v.x, v.y, v.z), 1, 1, {
+            name="box_zone",
+            debugPoly = false,
+            minZ = v.z - 1,
+            maxZ = v.z + 1,
+            heading = 180,
+        })
+    end
+
+    local impoundCombo = ComboZone:Create(impoundZones, {name = "impoundCombo", debugPoly = false})
+    impoundCombo:onPlayerInOut(function(isPointInside, point)
+        if isPointInside then
+            inImpound = true
+            if PlayerJob.name == 'police' and PlayerJob.onduty then
+                if IsPedInAnyVehicle(PlayerPedId(), false) then
+                    exports['qb-core']:DrawText(Lang:t('info.impound_veh'), 'left')
+                    impound()
+                else
+                    local currentSelection = 0
+
+                    for k, v in pairs(Config.Locations["impound"]) do
+                        if #(point - vector3(v.x, v.y, v.z)) < 4 then
+                            currentSelection = k
+                        end
+                    end
+                    exports['qb-menu']:showHeader({
+                        {
+                            header = Lang:t('menu.pol_impound'),
+                            params = {
+                                event = 'police:client:ImpoundMenuHeader',
+                                args = {
+                                    currentSelection = currentSelection,
                                 }
-                            })
-                        end
-                    elseif #(pos - v) < 1.5 then
-                        DrawText3D(v.x, v.y, v.z, Lang:t('info.evidence_stash', {value = k}))
-                        if headerDrawn then
-                            headerDrawn = false
-                            exports['qb-menu']:closeMenu()
-                        end
-                    end
+                            }
+                        }
+                    })
                 end
             end
+        else
+            inImpound = false
+            exports['qb-menu']:closeMenu()
+            exports['qb-core']:HideText()
         end
-        Wait(sleep)
-    end
-end)
+    end)
 
--- Personal Stash
-CreateThread(function()
-    Wait(1000)
-    while true do
-        local sleep = 2000
-        if LocalPlayer.state.isLoggedIn and PlayerJob.name == "police" then
-            local pos = GetEntityCoords(PlayerPedId())
-            for k, v in pairs(Config.Locations["stash"]) do
-                if #(pos - v) < 4.5 then
-                    if onDuty then
-                        sleep = 5
-                        if #(pos - v) < 1.5 then
-                            DrawText3D(v.x, v.y, v.z, Lang:t('info.stash_enter'))
-                            if IsControlJustReleased(0, 38) then
-                                TriggerServerEvent("inventory:server:OpenInventory", "stash", "policestash_"..QBCore.Functions.GetPlayerData().citizenid)
-                                TriggerEvent("inventory:client:SetCurrentStash", "policestash_"..QBCore.Functions.GetPlayerData().citizenid)
-                            end
-                        elseif #(pos - v) < 2.5 then
-                            DrawText3D(v.x, v.y, v.z, Lang:t('info.stash'))
+    -- Police Garage
+    local garageZones = {}
+    for _, v in pairs(Config.Locations["vehicle"]) do
+        garageZones[#garageZones+1] = BoxZone:Create(
+            vector3(v.x, v.y, v.z), 3, 3, {
+            name="box_zone",
+            debugPoly = false,
+            minZ = v.z - 1,
+            maxZ = v.z + 1,
+        })
+    end
+
+    local garageCombo = ComboZone:Create(garageZones, {name = "garageCombo", debugPoly = false})
+    garageCombo:onPlayerInOut(function(isPointInside, point)
+        if isPointInside then
+            inGarage = true
+            if PlayerJob.name == 'police' and PlayerJob.onduty then
+                if IsPedInAnyVehicle(PlayerPedId(), false) then
+                    exports['qb-core']:DrawText(Lang:t('info.store_veh'), 'left')
+		    garage()
+                else
+                    local currentSelection = 0
+
+                    for k, v in pairs(Config.Locations["vehicle"]) do
+                        if #(point - vector3(v.x, v.y, v.z)) < 4 then
+                            currentSelection = k
                         end
                     end
-                end
-            end
-        end
-        Wait(sleep)
-    end
-end)
-
--- Police Trash
-CreateThread(function()
-    Wait(1000)
-    while true do
-        local sleep = 2000
-        if LocalPlayer.state.isLoggedIn and PlayerJob.name == "police" then
-            local pos = GetEntityCoords(PlayerPedId())
-            for k, v in pairs(Config.Locations["trash"]) do
-                if #(pos - v) < 2 then
-                    sleep = 5
-                    if #(pos - v) < 1.0 then
-                        DrawText3D(v.x, v.y, v.z, Lang:t('info.trash_enter'))
-                        if IsControlJustReleased(0, 38) then
-                            TriggerServerEvent("inventory:server:OpenInventory", "stash", "policetrash", {
-                                maxweight = 4000000,
-                                slots = 300,
-                            })
-                            TriggerEvent("inventory:client:SetCurrentStash", "policetrash")
-                        end
-                    elseif #(pos - v) < 1.5 then
-                        DrawText3D(v.x, v.y, v.z, Lang:t('info.trash'))
-                    end
-                end
-            end
-        end
-        Wait(sleep)
-    end
-end)
-
--- Fingerprint
-CreateThread(function()
-    Wait(1000)
-    while true do
-        local sleep = 2000
-        if LocalPlayer.state.isLoggedIn and PlayerJob.name == "police" then
-            local pos = GetEntityCoords(PlayerPedId())
-            for k, v in pairs(Config.Locations["fingerprint"]) do
-                if #(pos - v) < 4.5 then
-                    if onDuty then
-                        sleep = 5
-                        if #(pos - v) < 1.5 then
-                            DrawText3D(v.x, v.y, v.z, Lang:t('info.scan_fingerprint'))
-                            if IsControlJustReleased(0, 38) then
-                                local player, distance = GetClosestPlayer()
-                                if player ~= -1 and distance < 2.5 then
-                                    local playerId = GetPlayerServerId(player)
-                                    TriggerServerEvent("police:server:showFingerprint", playerId)
-                                else
-                                    QBCore.Functions.Notify(Lang:t("error.none_nearby"), "error")
-                                end
-                            end
-                        elseif #(pos - v) < 2.5 then
-                            DrawText3D(v.x, v.y, v.z, Lang:t('info.finger_scan'))
-                        end
-                    end
-                end
-            end
-        end
-        Wait(sleep)
-    end
-end)
-
--- Armory
-CreateThread(function()
-    Wait(1000)
-    while true do
-        local sleep = 2000
-        if LocalPlayer.state.isLoggedIn and PlayerJob.name == "police" then
-            local pos = GetEntityCoords(PlayerPedId())
-            for k, v in pairs(Config.Locations["armory"]) do
-                if #(pos - v) < 4.5 then
-                    if onDuty then
-                        sleep = 5
-                        if #(pos - v) < 1.5 then
-                            DrawText3D(v.x, v.y, v.z, Lang:t('info.enter_armory'))
-                            if IsControlJustReleased(0, 38) then
-                                local authorizedItems = {
-                                    label = Lang:t('menu.pol_armory'),
-                                    slots = 30,
-                                    items = {}
+                    exports['qb-menu']:showHeader({
+                        {
+                            header = Lang:t('menu.pol_garage'),
+                            params = {
+                                event = 'police:client:VehicleMenuHeader',
+                                args = {
+                                    currentSelection = currentSelection,
                                 }
-                                local index = 1
-                                for _, armoryItem in pairs(Config.Items.items) do
-                                    for i=1, #armoryItem.authorizedJobGrades do
-                                        if armoryItem.authorizedJobGrades[i] == PlayerJob.grade.level then
-                                            authorizedItems.items[index] = armoryItem
-                                            authorizedItems.items[index].slot = index
-                                            index = index + 1
-                                        end
-                                    end
-                                end
-                                SetWeaponSeries()
-                                TriggerServerEvent("inventory:server:OpenInventory", "shop", "police", authorizedItems)
-                            end
-                        elseif #(pos - v) < 2.5 then
-                            DrawText3D(v.x, v.y, v.z, Lang:t('info.armory'))
-                        end
-                    end
+                            }
+                        }
+                    })
                 end
             end
+        else
+            inGarage = false
+            exports['qb-menu']:closeMenu()
+            exports['qb-core']:HideText()
         end
+<<<<<<< HEAD
         Wait(sleep)
     end
 end)
@@ -803,4 +1252,7 @@ CreateThread(function()
         end
         Wait(sleep)
     end
+=======
+    end)
+>>>>>>> 62c394fc80fcf87f7a51f7784f010cc9e07f1796
 end)

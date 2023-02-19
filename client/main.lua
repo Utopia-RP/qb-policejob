@@ -3,9 +3,7 @@ QBCore = exports['qb-core']:GetCoreObject()
 isHandcuffed = false
 cuffType = 1
 isEscorted = false
-draggerId = 0
 PlayerJob = {}
-onDuty = false
 local DutyBlips = {}
 
 -- Functions
@@ -44,9 +42,7 @@ end
 AddEventHandler('QBCore:Client:OnPlayerLoaded', function()
     local player = QBCore.Functions.GetPlayerData()
     PlayerJob = player.job
-    onDuty = player.job.onduty
     isHandcuffed = false
-    TriggerServerEvent("QBCore:Server:SetMetaData", "ishandcuffed", false)
     TriggerServerEvent("police:server:SetHandcuffStatus", false)
     TriggerServerEvent("police:server:UpdateBlips")
     TriggerServerEvent("police:server:UpdateCurrentCops")
@@ -75,7 +71,7 @@ AddEventHandler('QBCore:Client:OnPlayerLoaded', function()
 
     if PlayerJob and PlayerJob.name ~= "police" then
         if DutyBlips then
-            for k, v in pairs(DutyBlips) do
+            for _, v in pairs(DutyBlips) do
                 RemoveBlip(v)
             end
         end
@@ -89,35 +85,32 @@ RegisterNetEvent('QBCore:Client:OnPlayerUnload', function()
     TriggerServerEvent("police:server:UpdateCurrentCops")
     isHandcuffed = false
     isEscorted = false
-    onDuty = false
+    PlayerJob = {}
     ClearPedTasks(PlayerPedId())
     DetachEntity(PlayerPedId(), true, false)
     if DutyBlips then
-        for k, v in pairs(DutyBlips) do
+        for _, v in pairs(DutyBlips) do
             RemoveBlip(v)
         end
         DutyBlips = {}
     end
 end)
 
-RegisterNetEvent('QBCore:Client:OnJobUpdate', function(JobInfo)
-    PlayerJob = JobInfo
-    TriggerServerEvent("police:server:UpdateBlips")
-    if JobInfo.name == "police" then
-        if PlayerJob.onduty then
-            TriggerServerEvent("QBCore:ToggleDuty")
-            onDuty = false
-        end
-    end
+RegisterNetEvent("QBCore:Client:SetDuty", function(newDuty)
+    PlayerJob.onduty = newDuty
+end)
 
-    if (PlayerJob ~= nil) and PlayerJob.name ~= "police" then
+RegisterNetEvent('QBCore:Client:OnJobUpdate', function(JobInfo)
+    if JobInfo.name ~= "police" then
         if DutyBlips then
-            for k, v in pairs(DutyBlips) do
+            for _, v in pairs(DutyBlips) do
                 RemoveBlip(v)
             end
         end
         DutyBlips = {}
     end
+    PlayerJob = JobInfo
+    TriggerServerEvent("police:server:UpdateBlips")
 end)
 
 RegisterNetEvent('police:client:sendBillingMail', function(amount)
@@ -138,15 +131,15 @@ end)
 
 RegisterNetEvent('police:client:UpdateBlips', function(players)
     if PlayerJob and (PlayerJob.name == 'police' or PlayerJob.name == 'ambulance') and
-        onDuty then
+        PlayerJob.onduty then
         if DutyBlips then
-            for k, v in pairs(DutyBlips) do
+            for _, v in pairs(DutyBlips) do
                 RemoveBlip(v)
             end
         end
         DutyBlips = {}
         if players then
-            for k, data in pairs(players) do
+            for _, data in pairs(players) do
                 local id = GetPlayerFromServerId(data.source)
                 CreateDutyBlips(id, data.label, data.job, data.location)
 
@@ -210,7 +203,7 @@ end)
 
 -- Threads
 CreateThread(function()
-    for k, station in pairs(Config.Locations["stations"]) do
+    for _, station in pairs(Config.Locations["stations"]) do
         local blip = AddBlipForCoord(station.coords.x, station.coords.y, station.coords.z)
         SetBlipSprite(blip, 60)
         SetBlipAsShortRange(blip, true)

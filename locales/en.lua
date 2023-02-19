@@ -25,6 +25,8 @@ local Translations = {
         have_evidence_bag = 'You must have an empty evidence bag with you',
         no_driver_license = 'No drivers license',
         not_cuffed_dead = 'Civilian isn\'t cuffed or dead',
+        fine_yourself = 'You Cannot Fine Yourself',
+        not_online = "This person is not online"
     },
     success = {
         uncuffed = 'You have been uncuffed',
@@ -40,7 +42,8 @@ local Translations = {
         put_anklet_on = 'You put on an ankle tracker on %{firstname} %{lastname}',
         vehicle_flagged = 'Vehicle %{plate} has been flagged for %{reason}',
         impound_vehicle_removed = 'Vehicle taken out of impound!',
-    },
+        impounded = 'Vehicle impounded',
+ },
     info = {
         mr = 'Mr.',
         mrs = 'Mrs.',
@@ -73,7 +76,7 @@ local Translations = {
         cash_found = 'Found $%{cash} on the civilian',
         sent_jail_for = 'You sent the person to prison for %{time} months',
         fine_received = 'You received a fine of $%{fine}',
-        blip_text = 'Police Alert - %{text}',
+        blip_text = 'Police Alert - %{value}',
         jail_time_input = 'Jail time',
         submit = 'Submit',
         time_months = 'Time in Months',
@@ -84,8 +87,8 @@ local Translations = {
         evidence_stash = 'Evidence Stash | %{value}',
         slot = 'Slot no. (1,2,3)',
         current_evidence = '%{value} | Drawer %{value2}',
-        on_duty = '[~g~E~s~] - Go on duty',
-        off_duty = '[~r~E~s~] - Go off duty',
+        on_duty = '[E] - Go on duty',
+        off_duty = '[E] - Go off duty',
         onoff_duty = '~g~On~s~/~r~Off~s~ Duty',
         stash = 'Stash %{value}',
         delete_spike = '[~r~E~s~] Delete Spike Strip',
@@ -94,23 +97,25 @@ local Translations = {
         casing = 'Bullet Casing',
         blood = 'Blood',
         blood_text = '[~g~G~s~] Blood %{value}',
-        fingerprint_text = '[~g~G~s~] Fingerprint',
+        fingerprint_text = '[G] Fingerprint',
         fingerprint = 'Fingerprint',
-        store_heli = '[~g~E~s~] Store Helicopter',
-        take_heli = '[~g~E~s~] Take Helicopter',
-        impound_veh = '[~g~E~s~] - Impound Vehicle',
-        store_veh = '[~g~E~s~] - Store Vehicle',
+        store_heli = '[E] Store Helicopter',
+        take_heli = '[E] Take Helicopter',
+        impound_veh = '[E] - Impound Vehicle',
+        store_veh = '[E] - Store Vehicle',
         armory = 'Armory',
-        enter_armory = '[~g~E~s~] Armory',
+        enter_armory = '[E] Armory',
         finger_scan = 'Fingerprint Scanning',
-        scan_fingerprint = '[~g~E~s~] Scan Fingerprint',
+        scan_fingerprint = '[E] Scan Fingerprint',
         trash = 'Trash',
-        trash_enter = '[~g~E~s~] Trash Bin',
-        stash_enter = '[~g~E~s~] Enter Locker',
+        trash_enter = '[E] Trash Bin',
+        stash_enter = '[E] Enter Locker',
         target_location = 'The location of %{firstname} %{lastname} is marked on your map',
         anklet_location = 'Anklet location',
         new_call = 'New Call',
-        officer_down = 'Officer %{lastname} | %{callsign} Down'
+        officer_down = 'Officer %{lastname} | %{callsign} Down',
+        fine_issued = 'Fine has been issued to offender succesfully',
+        received_fine = 'State Debt Recovery has automatically recovered the fines owed...'
     },
     evidence = {
         red_hands = 'Red hands',
@@ -172,6 +177,7 @@ local Translations = {
         message_sent = 'Message to be sent',
         civilian_call = 'Civilian Call',
         emergency_call = 'New 911 Call',
+        fine = 'Fine A Person'
     },
     progressbar = {
         blood_clear = 'Clearing Blood...',
@@ -179,10 +185,11 @@ local Translations = {
         robbing = 'Robbing Person...',
         place_object = 'Placing object..',
         remove_object = 'Removing object..',
+        impound = 'Impounding Vehicle..',
     },
 }
 
-Lang = Locale:new({
+Lang = Lang or Locale:new({
     phrases = Translations,
     warnOnMissing = true
 })
